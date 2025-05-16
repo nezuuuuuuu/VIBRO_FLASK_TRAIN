@@ -1,0 +1,5 @@
+//sound by folderid
+http://localhost:5000/sounds?folderId=6826bc24f082b5447b9395d1
+
+//folder by group id
+http://localhost:5000/folders?groupId=68202344f48cbf16a8a70003
