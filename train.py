@@ -162,7 +162,7 @@ def create_tflite_model_from_csv(esc50_csv, base_data_path, modelName, yamnet_mo
         with open(tflite_file_path, 'wb') as f:
             f.write(tflite_model)
 
-        print(f"✅ TFLite model saved as {tflite_file_path}")
+ 
         return tflite_file_path, custom_labels  # Return the path to the TFLite model and labels
 
     except Exception as e:
