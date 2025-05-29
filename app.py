@@ -169,7 +169,12 @@ def get_folders():
     group_data = group_collection.find_one({'_id': group_object_id}, {'groupName': 1, '_id': 0})
     group_name = group_data.get('groupName') if group_data else None
     base_path = './local_folders'
-    os.makedirs(base_path, exist_ok=True)
+    # os.makedirs(base_path, exist_ok=True)
+    if os.path.exists(base_path):
+        print(f"Deleting existing folder: '{base_path}'")
+        shutil.rmtree(base_path)
+    
+    os.makedirs(base_path)
 
     csv_rows = []
     category_to_index = {}
