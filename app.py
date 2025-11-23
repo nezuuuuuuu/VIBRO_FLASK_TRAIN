@@ -20,7 +20,7 @@ import tensorflow_hub as hub
 import numpy as np
 import pandas as pd
 import os
-from train import create_tflite_model_from_csv
+from train_multilabel import create_tflite_model_from_csv
 from flask import send_file
 import datetime # Import datetime
 app = Flask(__name__)
@@ -43,49 +43,90 @@ folders_collection = db["customfolders"]
 group_collection = db["groups"]
 model_collection = db["models"] # Add model collection
 
+
+
+
+
+
+
+
+import os
+import csv
+import numpy as np
+from collections import defaultdict
+
+# Set the root directory
+root_dir = 'local_folders'
+csv_file = 'local_folders\metadata.csv'
+num_folds = 5
+all_class_names = None
+
+
+def create_class_name_mapping(root_dir, classes_to_include=None):
+    folder_names = sorted([
+        folder for folder in os.listdir(root_dir)
+        if os.path.isdir(os.path.join(root_dir, folder))
+    ])
+    if classes_to_include:
+        folder_names = [f for f in folder_names if f in classes_to_include]
+    folder_to_index = {class_name: i for i, class_name in enumerate(folder_names)}
+    return folder_to_index, folder_names
+
+
+
 def create_folder_metadata_csv(base_folder_path):
-    """
-    Generates a CSV metadata file for a given base folder.
 
-    The CSV includes 'filename', 'fold', 'target', and 'category' columns.
-    'category' is the folder name, 'filename' includes the full path,
-    'target' is the folder's index, and 'fold' is a random value from 0-4.
-    The rows are shuffled after fold assignment.
 
-    Args:
-        base_folder_path (str): The path to the base folder containing subfolders.
-    """
-    csv_rows = []
-    
-    # Get subfolders (categories)
-    subfolders = [f.name for f in os.scandir(base_folder_path) if f.is_dir()]
-    subfolders.sort() # Ensure consistent ordering for target index
 
-    for target_index, category in enumerate(subfolders):
-        category_path = os.path.join(base_folder_path, category)
-        for filename in os.listdir(category_path):
-            full_filepath = os.path.join(category_path, filename)
-            if os.path.isfile(full_filepath): # Ensure it's a file, not a sub-directory
-                csv_rows.append({
-                    'filename': full_filepath,
-                    'fold': random.randint(0, 4),  # Assign a random fold
-                    'target': target_index,
-                    'category': category
-                })
+    # Create mapping
+    folder_to_index, all_class_names = create_class_name_mapping(root_dir)
+    num_classes = len(all_class_names)
 
-    # Shuffle the rows after assigning folds
-    random.shuffle(csv_rows)
+    # Dictionary: filename → (filepath, label_vector)
+    file_label_map = {}
 
-    # Write CSV file
-    csv_path = os.path.join(base_folder_path, "metadata.csv")
-    try:
-        with open(csv_path, 'w', newline='') as csvfile:
-            writer = csv.DictWriter(csvfile, fieldnames=['filename', 'fold', 'target', 'category'])
-            writer.writeheader()
-            writer.writerows(csv_rows)
-        print(f"Saved metadata CSV at: {csv_path}")
-    except Exception as e:
-        print(f"Error writing CSV: {e}")
+    # Collect all valid files
+    for subdir, dirs, files in os.walk(root_dir):
+        label = os.path.basename(subdir)
+        if label not in folder_to_index:
+            continue  # Skip if label not included
+
+        class_index = folder_to_index[label]
+        
+        for file in files:
+            if not file.endswith('.wav'):
+                continue
+            filepath = os.path.join(subdir, file).replace("\\", "/")
+
+            if file not in file_label_map:
+                label_vector = [0] * num_classes
+                file_label_map[file] = (filepath, label_vector)
+            
+            _, label_vector = file_label_map[file]
+            label_vector[class_index] = 1  # Add label
+
+    # Now, filter out `Speech`-only and `Animal`-only files if they exceed the limit
+    filtered_items = []
+    for filename, (filepath, label_vector) in file_label_map.items():
+            filtered_items.append((filename, filepath, label_vector))
+
+
+
+    # Shuffle the filtered entries
+    np.random.shuffle(filtered_items)
+
+    # Write CSV
+    with open(csv_file, 'w', newline='', encoding='utf-8') as f:
+        writer = csv.writer(f)
+        header = ['filepath', 'fold'] + all_class_names
+        writer.writerow(header)
+
+        for idx, (filename, filepath, label_vector) in enumerate(filtered_items):
+            fold_index = idx % num_folds
+            row = [filepath, fold_index] + label_vector
+            writer.writerow(row)
+
+
 
 def copy_folder_contents(source_folder, destination_folder):
     """
@@ -225,13 +266,7 @@ def get_folders():
                     wf.setsampwidth(2)
                     wf.setframerate(16000)
                     wf.writeframes(pcm_bytes)
-                print(f"Saved WAV file: {file_path}")
-                csv_rows.append({
-                    'filename': filename,
-                    'fold': 1,
-                    'target': target,
-                    'category': folder_name
-                })
+              
             except Exception as e:
                 print(f"Error writing WAV file {file_path}: {e}")
                 continue
@@ -249,26 +284,29 @@ def get_folders():
             except Exception as e:
                     print(f"Error augmenting audio {file_path}: {e}")
 
-    copy_folder_contents("organized_audio", base_path)
-    create_folder_metadata_csv(base_path)
-    esc50_csv_path = 'local_folders\metadata.csv'
+    copy_folder_contents("organized_audio2", base_path)
+    csv_path = 'local_folders\metadata.csv'
     base_data_path = ''
+    folder_to_index, all_class_names = create_class_name_mapping(root_dir)
+    create_folder_metadata_csv(base_path)
+    print(all_class_names)
 
-    tflite_model_path, custom_labels = create_tflite_model_from_csv(esc50_csv_path, base_data_path,"group_model")
+    tflite_model_path= create_tflite_model_from_csv(csv_path, base_data_path,"group_model",(len(all_class_names)))
+   
     if tflite_model_path and os.path.exists(tflite_model_path):
         # Create a temporary file for labels
         labels_file_name = f'{group_name}_labels.txt'
         labels_file_path = os.path.join(base_path, labels_file_name)
         with open(labels_file_path, 'w') as f:
-            for label in custom_labels:
+            for label in all_class_names:
                 f.write(f"{label}\n")
         
         #save model document
         model_data = {
         'groupId': group_object_id,
         'modelName': group_name,
-        'modelLabels': custom_labels,
-        'labelCount': len(custom_labels),
+        'modelLabels': all_class_names,
+        'labelCount': len(all_class_names),
         'filePath': tflite_model_path,
         'timestamp': datetime.datetime.utcnow()
         }

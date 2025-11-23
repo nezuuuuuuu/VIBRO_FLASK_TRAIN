@@ -1,0 +1,8 @@
+local_folders/
+group_model/
+speech/
+speech_trimmed/
+
+__pycache__/
+*.py[cod]
+*$py.class

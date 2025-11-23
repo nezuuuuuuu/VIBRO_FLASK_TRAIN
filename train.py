@@ -123,7 +123,7 @@ def create_tflite_model_from_csv(esc50_csv, base_data_path, modelName, yamnet_mo
 
         with tf.device('/GPU:0'):  # Or specify your GPU
             history = my_model.fit(train_ds,
-                                    epochs=20,
+                                    epochs=100,
                                     validation_data=val_ds,
                                     callbacks=[callback, lr_scheduler])
 
@@ -143,7 +143,7 @@ def create_tflite_model_from_csv(esc50_csv, base_data_path, modelName, yamnet_mo
                                                     trainable=False, name='yamnet')
         score, embeddings_output, _ = embedding_extraction_layer(input_segment)
         serving_outputs = my_model(embeddings_output)
-        serving_outputs = ReduceMeanLayer(axis=0, name='classifier')(serving_outputs)
+        serving_outputs = tf.keras.layers.Lambda(lambda x: tf.reduce_max(x, axis=0))(serving_outputs)
         averaged_scores = tf.keras.layers.Lambda(lambda x: tf.reduce_mean(x, axis=0), name='avg_yamnet_scores')(score)
         serving_model = tf.keras.Model(input_segment,
                                         outputs={
