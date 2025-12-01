@@ -23,6 +23,12 @@ import os
 from train_multilabel import create_tflite_model_from_csv
 from flask import send_file
 import datetime # Import datetime
+
+
+import os
+import csv
+import numpy as np
+from collections import defaultdict
 app = Flask(__name__)
 CORS(app)
 
@@ -50,10 +56,6 @@ model_collection = db["models"] # Add model collection
 
 
 
-import os
-import csv
-import numpy as np
-from collections import defaultdict
 
 # Set the root directory
 root_dir = 'local_folders'
@@ -147,7 +149,7 @@ def copy_folder_contents(source_folder, destination_folder):
         # Create destination folder if it doesn't exist
         if not os.path.exists(destination_folder):
             os.makedirs(destination_folder)
-            print(f"Created destination folder: {destination_folder}")
+            # print(f"Created destination folder: {destination_folder}")
 
         # Use shutil.copytree to copy contents recursively
         for item in os.listdir(source_folder):
@@ -155,10 +157,10 @@ def copy_folder_contents(source_folder, destination_folder):
             dest_item_path = os.path.join(destination_folder, item)
             if os.path.isdir(source_item_path):
                 shutil.copytree(source_item_path, dest_item_path, dirs_exist_ok=True)
-                print(f"Copied directory: {source_item_path} to {dest_item_path}")
+                # print(f"Copied directory: {source_item_path} to {dest_item_path}")
             else:
                 shutil.copy2(source_item_path, dest_item_path)  # copy2 preserves metadata
-                print(f"Copied file: {source_item_path} to {dest_item_path}")
+                # print(f"Copied file: {source_item_path} to {dest_item_path}")
 
         print(f"Successfully copied contents from '{source_folder}' to '{destination_folder}'")
 
@@ -279,7 +281,7 @@ def get_folders():
                     augmented_filename = f"{filename[:-4]}_aug{i}.wav"
                     augmented_path = os.path.join(folder_path, augmented_filename)
                     sf.write(augmented_path, augmented_samples, sample_rate)
-                    print(f"Saved augmented file: {augmented_path}")
+                    # print(f"Saved augmented file: {augmented_path}")
                     
             except Exception as e:
                     print(f"Error augmenting audio {file_path}: {e}")
@@ -289,8 +291,7 @@ def get_folders():
     base_data_path = ''
     folder_to_index, all_class_names = create_class_name_mapping(root_dir)
     create_folder_metadata_csv(base_path)
-    print(all_class_names)
-
+    print("size of the class", len(all_class_names))
     tflite_model_path= create_tflite_model_from_csv(csv_path, base_data_path,"group_model",(len(all_class_names)))
    
     if tflite_model_path and os.path.exists(tflite_model_path):

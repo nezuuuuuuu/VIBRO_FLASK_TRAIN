@@ -1,4 +1,3 @@
-import os
 from IPython import display
 import tensorflow as tf
 import tensorflow_io as tfio
@@ -6,6 +5,10 @@ import tensorflow_hub as hub
 import numpy as np
 import pandas as pd
 import os
+      
+from tensorflow.keras import regularizers
+from tensorflow.keras.callbacks import ReduceLROnPlateau
+
 os.environ["TFHUB_CACHE_DIR"] = "./my_tfhub_cache"
 
 def create_tflite_model_from_csv(esc50_csv, base_data_path, modelName, folder_count, yamnet_model_handle="basemodel"):
@@ -72,7 +75,7 @@ def create_tflite_model_from_csv(esc50_csv, base_data_path, modelName, folder_co
 
         # Cache dataset after embedding extraction
         cached_ds = main_ds.cache()
-        cached_ds = main_ds.cache("cache.tf-data")  # Will create a cache file on disk
+        # cached_ds = main_ds.cache("cache.tf-data")  # Will create a cache file on disk
         print("Dataset cached successfully.")
         # Filter splits using fold
         train_ds = cached_ds.filter(lambda emb, label, fold: fold < 3)
@@ -94,7 +97,6 @@ def create_tflite_model_from_csv(esc50_csv, base_data_path, modelName, folder_co
         val_ds   = val_ds.batch(32).prefetch(tf.data.AUTOTUNE)
         test_ds  = test_ds.batch(32).prefetch(tf.data.AUTOTUNE)
 
-        from tensorflow.keras import regularizers
 
 
         my_model = tf.keras.Sequential([
@@ -111,8 +113,7 @@ def create_tflite_model_from_csv(esc50_csv, base_data_path, modelName, folder_co
         my_model.compile(loss=tf.keras.losses.BinaryCrossentropy(),
                  optimizer=tf.keras.optimizers.Adam(learning_rate=1e-4),
                  metrics=['accuracy'])
-        from tensorflow.keras.callbacks import ReduceLROnPlateau
-
+  
         lr_scheduler = ReduceLROnPlateau(monitor='val_loss', patience=1, factor=0.1, min_lr=1e-7)
 
         callback = tf.keras.callbacks.EarlyStopping(

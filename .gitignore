@@ -6,3 +6,5 @@ speech_trimmed/
 __pycache__/
 *.py[cod]
 *$py.class
+myenv/
+.env

@@ -114,10 +114,10 @@ def copy_folder_contents(source_folder, destination_folder):
             dest_item_path = os.path.join(destination_folder, item)
             if os.path.isdir(source_item_path):
                 shutil.copytree(source_item_path, dest_item_path, dirs_exist_ok=True)
-                print(f"Copied directory: {source_item_path} to {dest_item_path}")
+                # print(f"Copied directory: {source_item_path} to {dest_item_path}")
             else:
                 shutil.copy2(source_item_path, dest_item_path)  # copy2 preserves metadata
-                print(f"Copied file: {source_item_path} to {dest_item_path}")
+                # print(f"Copied file: {source_item_path} to {dest_item_path}")
 
         print(f"Successfully copied contents from '{source_folder}' to '{destination_folder}'")
 
