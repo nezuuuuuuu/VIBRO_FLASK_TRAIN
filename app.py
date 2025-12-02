@@ -2,6 +2,7 @@ from flask import Flask, jsonify, request, send_file
 from flask_cors import CORS
 from pymongo import MongoClient
 from bson import ObjectId
+import urllib.parse
 import os
 import base64
 import wave
@@ -23,6 +24,7 @@ import os
 from train_multilabel import create_tflite_model_from_csv
 from flask import send_file
 import datetime # Import datetime
+import boto3
 
 
 import os
@@ -196,14 +198,49 @@ def serialize_doc(doc):
     else:
         return doc
 
+def update_group_model_url(group_id, group_collection,status):
+    # 1. Check if group_id is missing (Your existing logic)
+    if not group_id:
+        return jsonify({'error': 'Missing groupId parameter'}), 400
+    
+    # 2. If group_id exists, proceed to update the document
+    else:
+        try:
+            # Convert the string group_id to a MongoDB ObjectId
+            group_object_id = ObjectId(group_id) 
+            
+            # Perform the update operation
+            result = group_collection.update_one(
+                # Query/Filter: Find the document by its _id
+                {'_id': group_object_id},
+                {'$set': {'groupModelUrl': status}}
+            )
+            
+            # Check the outcome of the update
+            if result.matched_count == 0:
+                # No document found with that ID
+                return jsonify({'error': f'Group with ID {group_id} not found'}), 404
+            
+            # Success
+            return jsonify({
+                'message': 'Group model URL updated successfully',
+                'id': group_id,
+                'status': status
+            }), 200
+
+        except Exception as e:
+            # Handle cases where the ID is invalid (e.g., not a valid ObjectId string)
+            return jsonify({'error': f'Invalid group ID format: {e}'}), 400
 @app.route('/folders', methods=['GET'])
 def get_folders():
     group_id = request.args.get('groupId')
     if not group_id:
         return jsonify({'error': 'Missing groupId parameter'}), 400
-
+  
     try:
+        
         group_object_id = ObjectId(group_id)
+        update_group_model_url(group_object_id, group_collection,"PENDING")
     except Exception:
         return jsonify({'error': 'Invalid groupId format'}), 400
 
@@ -286,7 +323,7 @@ def get_folders():
             except Exception as e:
                     print(f"Error augmenting audio {file_path}: {e}")
 
-    copy_folder_contents("organized_audio2", base_path)
+    copy_folder_contents("organized_audio", base_path)
     csv_path = 'local_folders\metadata.csv'
     base_data_path = ''
     folder_to_index, all_class_names = create_class_name_mapping(root_dir)
@@ -317,12 +354,34 @@ def get_folders():
             model_data,
             upsert=True
         )
-        return send_file(
-            tflite_model_path,
-            as_attachment=True,
-            download_name=f'{group_name}.tflite',  # the file name clients will receive
-            mimetype='application/octet-stream'
+        s3 = boto3.client(
+            's3',
+            aws_access_key_id='AKIA6FXLOVDK4WFMCROK',
+            aws_secret_access_key='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',
+            region_name='ap-southeast-2'
         )
+    
+        BUCKET_NAME = "vibro-models"
+        REGION_CODE = "ap-southeast-2"
+        OBJECT_KEY = f"{group_name}.tflite"
+
+        safe_key = urllib.parse.quote(OBJECT_KEY, safe="~()*!.'")
+
+
+        download_url = f"https://{BUCKET_NAME}.s3.{REGION_CODE}.amazonaws.com/{safe_key}"
+
+        s3.upload_file(tflite_model_path, 
+                        "vibro-models", 
+                        f"{group_name}.tflite",
+                        ExtraArgs={'ACL': 'public-read'}
+            )
+        update_group_model_url(group_object_id, group_collection,download_url)
+        # return send_file(
+        #     tflite_model_path,
+        #     as_attachment=True,
+        #     download_name=f'{group_name}.tflite',  # the file name clients will receive
+        #     mimetype='application/octet-stream'
+        # )
     else:
         return jsonify({"message": "Failed to create TFLite model"}), 500
 
