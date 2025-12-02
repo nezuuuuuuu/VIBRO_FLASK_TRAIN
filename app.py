@@ -25,12 +25,19 @@ from train_multilabel import create_tflite_model_from_csv
 from flask import send_file
 import datetime # Import datetime
 import boto3
-
-
+from dotenv import load_dotenv
+load_dotenv()
 import os
 import csv
 import numpy as np
 from collections import defaultdict
+load_dotenv()
+
+
+
+
+aws_access_key_id = os.getenv("aws_access_key_id")
+aws_secret_access_key = os.getenv("zXenRt6g0RnwirnE2pOrd4YUfVr461AT0TByXlvm")
 app = Flask(__name__)
 CORS(app)
 
@@ -356,8 +363,8 @@ def get_folders():
         )
         s3 = boto3.client(
             's3',
-            aws_access_key_id='AKIA6FXLOVDK4WFMCROK',
-            aws_secret_access_key='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',
+            aws_access_key_id=aws_access_key_id,
+            aws_secret_access_key=aws_secret_access_key,
             region_name='ap-southeast-2'
         )
     
