@@ -31,6 +31,9 @@ import os
 import csv
 import numpy as np
 from collections import defaultdict
+import threading
+
+training_lock = threading.Lock()
 app = Flask(__name__)
 CORS(app)
 
@@ -233,157 +236,158 @@ def update_group_model_url(group_id, group_collection,status):
             return jsonify({'error': f'Invalid group ID format: {e}'}), 400
 @app.route('/folders', methods=['GET'])
 def get_folders():
-    group_id = request.args.get('groupId')
-    if not group_id:
-        return jsonify({'error': 'Missing groupId parameter'}), 400
-  
-    try:
-        
-        group_object_id = ObjectId(group_id)
-        update_group_model_url(group_object_id, group_collection,"PENDING")
-    except Exception:
-        return jsonify({'error': 'Invalid groupId format'}), 400
-
-    folders = list(folders_collection.find({'groupId': group_object_id}, {'_id': 1, 'folderName': 1}))
-    serialized_folders = [serialize_doc(folder) for folder in folders]
-    group_data = group_collection.find_one({'_id': group_object_id}, {'groupName': 1, '_id': 0})
-    group_name = group_data.get('groupName') if group_data else None
-    base_path = './local_folders'
-    # os.makedirs(base_path, exist_ok=True)
-    if os.path.exists(base_path):
-        print(f"Deleting existing folder: '{base_path}'")
-        shutil.rmtree(base_path)
+    with training_lock:
+        group_id = request.args.get('groupId')
+        if not group_id:
+            return jsonify({'error': 'Missing groupId parameter'}), 400
     
-    os.makedirs(base_path)
+        try:
+            
+            group_object_id = ObjectId(group_id)
+            update_group_model_url(group_object_id, group_collection,"PENDING")
+        except Exception:
+            return jsonify({'error': 'Invalid groupId format'}), 400
 
-    csv_rows = []
-    category_to_index = {}
-    current_index = 0
-
-    for folder in serialized_folders:
-        folder_name = folder.get('folderName')
-        folder_id = folder.get('_id')
-
-        if not (folder_name and folder_id):
-            continue
-
-        # Assign numeric index to category
-        if folder_name not in category_to_index:
-            category_to_index[folder_name] = current_index
-            current_index += 1
-        target = category_to_index[folder_name]
-
-        # Make folder path safe
-        safe_folder_name = "".join(c for c in folder_name if c.isalnum() or c in (' ', '_', '-')).rstrip()
-        folder_path = os.path.join(base_path, safe_folder_name)
-        os.makedirs(folder_path, exist_ok=True)
-
-        sounds = list(sounds_collection.find({'folderId': ObjectId(folder_id)}, {'_id': 0, 'sound': 1, 'filename': 1}))
+        folders = list(folders_collection.find({'groupId': group_object_id}, {'_id': 1, 'folderName': 1}))
+        serialized_folders = [serialize_doc(folder) for folder in folders]
+        group_data = group_collection.find_one({'_id': group_object_id}, {'groupName': 1, '_id': 0})
+        group_name = group_data.get('groupName') if group_data else None
+        base_path = './local_folders'
+        # os.makedirs(base_path, exist_ok=True)
+        if os.path.exists(base_path):
+            print(f"Deleting existing folder: '{base_path}'")
+            shutil.rmtree(base_path)
         
-        for sound_doc in sounds:
-            filename = sound_doc.get('filename')
-            sound_data = sound_doc.get('sound')
+        os.makedirs(base_path)
 
-            if not (filename and sound_data):
+        csv_rows = []
+        category_to_index = {}
+        current_index = 0
+
+        for folder in serialized_folders:
+            folder_name = folder.get('folderName')
+            folder_id = folder.get('_id')
+
+            if not (folder_name and folder_id):
                 continue
 
-            try:
-                clean_base64 = "".join(sound_data.split())
-                pcm_bytes = base64.b64decode(clean_base64)
-            except Exception as e:
-                print(f"Error decoding base64 for {filename}: {e}")
-                continue
+            # Assign numeric index to category
+            if folder_name not in category_to_index:
+                category_to_index[folder_name] = current_index
+                current_index += 1
+            target = category_to_index[folder_name]
 
-            if not filename.lower().endswith('.wav'):
-                filename += '.wav'
-            file_path = os.path.join(folder_path, filename)
+            # Make folder path safe
+            safe_folder_name = "".join(c for c in folder_name if c.isalnum() or c in (' ', '_', '-')).rstrip()
+            folder_path = os.path.join(base_path, safe_folder_name)
+            os.makedirs(folder_path, exist_ok=True)
 
-            # Write original WAV file
-            try:
-                with wave.open(file_path, 'wb') as wf:
-                    wf.setnchannels(1)
-                    wf.setsampwidth(2)
-                    wf.setframerate(16000)
-                    wf.writeframes(pcm_bytes)
-              
-            except Exception as e:
-                print(f"Error writing WAV file {file_path}: {e}")
-                continue
+            sounds = list(sounds_collection.find({'folderId': ObjectId(folder_id)}, {'_id': 0, 'sound': 1, 'filename': 1}))
+            
+            for sound_doc in sounds:
+                filename = sound_doc.get('filename')
+                sound_data = sound_doc.get('sound')
 
-            # Augmentation
-            try:
-                samples, sample_rate = sf.read(file_path)
-                for i in range(1, 6):
-                    augmented_samples = augment(samples=samples, sample_rate=sample_rate)
-                    augmented_filename = f"{filename[:-4]}_aug{i}.wav"
-                    augmented_path = os.path.join(folder_path, augmented_filename)
-                    sf.write(augmented_path, augmented_samples, sample_rate)
-                    # print(f"Saved augmented file: {augmented_path}")
-                    
-            except Exception as e:
-                    print(f"Error augmenting audio {file_path}: {e}")
+                if not (filename and sound_data):
+                    continue
 
-    copy_folder_contents("organized_audio", base_path)
-    csv_path = 'local_folders\metadata.csv'
-    base_data_path = ''
-    folder_to_index, all_class_names = create_class_name_mapping(root_dir)
-    create_folder_metadata_csv(base_path)
-    print("size of the class", len(all_class_names))
-    tflite_model_path= create_tflite_model_from_csv(csv_path, base_data_path,"group_model",(len(all_class_names)))
-   
-    if tflite_model_path and os.path.exists(tflite_model_path):
-        # Create a temporary file for labels
-        labels_file_name = f'{group_name}_labels.txt'
-        labels_file_path = os.path.join(base_path, labels_file_name)
-        with open(labels_file_path, 'w') as f:
-            for label in all_class_names:
-                f.write(f"{label}\n")
-        
-        #save model document
-        model_data = {
-        'groupId': group_object_id,
-        'modelName': group_name,
-        'modelLabels': all_class_names,
-        'labelCount': len(all_class_names),
-        'filePath': tflite_model_path,
-        'timestamp': datetime.datetime.utcnow()
-        }
+                try:
+                    clean_base64 = "".join(sound_data.split())
+                    pcm_bytes = base64.b64decode(clean_base64)
+                except Exception as e:
+                    print(f"Error decoding base64 for {filename}: {e}")
+                    continue
 
-        model_collection.replace_one(
-            {'groupId': group_object_id},  # match by groupId
-            model_data,
-            upsert=True
-        )
-        s3 = boto3.client(
-            's3',
-            aws_access_key_id='AKIA6FXLOVDK4WFMCROK',
-            aws_secret_access_key='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',
-            region_name='ap-southeast-2'
-        )
+                if not filename.lower().endswith('.wav'):
+                    filename += '.wav'
+                file_path = os.path.join(folder_path, filename)
+
+                # Write original WAV file
+                try:
+                    with wave.open(file_path, 'wb') as wf:
+                        wf.setnchannels(1)
+                        wf.setsampwidth(2)
+                        wf.setframerate(16000)
+                        wf.writeframes(pcm_bytes)
+                
+                except Exception as e:
+                    print(f"Error writing WAV file {file_path}: {e}")
+                    continue
+
+                # # Augmentation
+                # try:
+                #     samples, sample_rate = sf.read(file_path)
+                #     for i in range(1, 6):
+                #         augmented_samples = augment(samples=samples, sample_rate=sample_rate)
+                #         augmented_filename = f"{filename[:-4]}_aug{i}.wav"
+                #         augmented_path = os.path.join(folder_path, augmented_filename)
+                #         sf.write(augmented_path, augmented_samples, sample_rate)
+                #         # print(f"Saved augmented file: {augmented_path}")
+                        
+                # except Exception as e:
+                #         print(f"Error augmenting audio {file_path}: {e}")
+
+        copy_folder_contents("organized_audio", base_path)
+        csv_path = 'local_folders\metadata.csv'
+        base_data_path = ''
+        folder_to_index, all_class_names = create_class_name_mapping(root_dir)
+        create_folder_metadata_csv(base_path)
+        print("size of the class", len(all_class_names))
+        tflite_model_path= create_tflite_model_from_csv(csv_path, base_data_path,"group_model",(len(all_class_names)))
     
-        BUCKET_NAME = "vibro-models"
-        REGION_CODE = "ap-southeast-2"
-        OBJECT_KEY = f"{group_name}.tflite"
+        if tflite_model_path and os.path.exists(tflite_model_path):
+            # Create a temporary file for labels
+            labels_file_name = f'{group_name}_labels.txt'
+            labels_file_path = os.path.join(base_path, labels_file_name)
+            with open(labels_file_path, 'w') as f:
+                for label in all_class_names:
+                    f.write(f"{label}\n")
+            
+            #save model document
+            model_data = {
+            'groupId': group_object_id,
+            'modelName': group_name,
+            'modelLabels': all_class_names,
+            'labelCount': len(all_class_names),
+            'filePath': tflite_model_path,
+            'timestamp': datetime.datetime.utcnow()
+            }
 
-        safe_key = urllib.parse.quote(OBJECT_KEY, safe="~()*!.'")
-
-
-        download_url = f"https://{BUCKET_NAME}.s3.{REGION_CODE}.amazonaws.com/{safe_key}"
-
-        s3.upload_file(tflite_model_path, 
-                        "vibro-models", 
-                        f"{group_name}.tflite",
-                        ExtraArgs={'ACL': 'public-read'}
+            model_collection.replace_one(
+                {'groupId': group_object_id},  # match by groupId
+                model_data,
+                upsert=True
             )
-        update_group_model_url(group_object_id, group_collection,download_url)
-        # return send_file(
-        #     tflite_model_path,
-        #     as_attachment=True,
-        #     download_name=f'{group_name}.tflite',  # the file name clients will receive
-        #     mimetype='application/octet-stream'
-        # )
-    else:
-        return jsonify({"message": "Failed to create TFLite model"}), 500
+            s3 = boto3.client(
+                's3',
+                aws_access_key_id='AKIA6FXLOVDK4WFMCROK',
+                aws_secret_access_key='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',
+                region_name='ap-southeast-2'
+            )
+        
+            BUCKET_NAME = "vibro-models"
+            REGION_CODE = "ap-southeast-2"
+            OBJECT_KEY = f"{group_name}.tflite"
+
+            safe_key = urllib.parse.quote(OBJECT_KEY, safe="~()*!.'")
+
+
+            download_url = f"https://{BUCKET_NAME}.s3.{REGION_CODE}.amazonaws.com/{safe_key}"
+
+            s3.upload_file(tflite_model_path, 
+                            "vibro-models", 
+                            f"{group_name}.tflite",
+                            ExtraArgs={'ACL': 'public-read'}
+                )
+            update_group_model_url(group_object_id, group_collection,download_url)
+            # return send_file(
+            #     tflite_model_path,
+            #     as_attachment=True,
+            #     download_name=f'{group_name}.tflite',  # the file name clients will receive
+            #     mimetype='application/octet-stream'
+            # )
+        else:
+            return jsonify({"message": "Failed to create TFLite model"}), 500
 
     
 if __name__ == '__main__':
