@@ -380,12 +380,12 @@ def get_folders():
                             ExtraArgs={'ACL': 'public-read'}
                 )
             update_group_model_url(group_object_id, group_collection,download_url)
-            # return send_file(
-            #     tflite_model_path,
-            #     as_attachment=True,
-            #     download_name=f'{group_name}.tflite',  # the file name clients will receive
-            #     mimetype='application/octet-stream'
-            # )
+            return send_file(
+                tflite_model_path,
+                as_attachment=True,
+                download_name=f'{group_name}.tflite',  # the file name clients will receive
+                mimetype='application/octet-stream'
+            )
         else:
             return jsonify({"message": "Failed to create TFLite model"}), 500
 
